@@ -1,13 +1,8 @@
 from collections import defaultdict
-from typing import List
 
 from parser_py.parse import HeritageAwareString
 from type_inference.types.edge import Edge
-from type_inference.types.expression import Literal
-
-
-def get_variables(rule: str) -> List:
-  raise NotImplementedError()
+from type_inference.types.expression import Literal, Variable
 
 
 def _to_dict(obj, ignore_keys=None):
@@ -45,6 +40,10 @@ class TypesGraph:
         result.expression_connections[key1][key2].extend(value)
 
     return result
+
+  @property
+  def head_defined(self):
+    return (k for k in self.expression_connections.keys() if isinstance(k, Variable))
 
   def to_serializable_edges_list(self):
     return [_to_dict(e, ("vertices",)) for e in self.to_edges_list()]
