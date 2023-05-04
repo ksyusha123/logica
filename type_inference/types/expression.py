@@ -15,9 +15,6 @@ class Expression:
 class PredicateFieldAddressing(Expression):
   pass
 
-  def __hash__(self):
-    return hash(self._id)
-
 
 class PredicateAddressing(PredicateFieldAddressing):
   def __init__(self, predicate_name: str, field: str):
