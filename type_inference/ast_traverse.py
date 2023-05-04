@@ -4,7 +4,7 @@ from collections import defaultdict
 from parser_py import parse
 from type_inference.types.edge import Equality, EqualityOfElement, FieldBelonging, PredicateArgument
 from type_inference.types.expression import StringLiteral, NumberLiteral, BooleanLiteral, NullLiteral, ListLiteral, \
-  PredicateAddressing, SubscriptAddressing, Variable
+  PredicateAddressing, SubscriptAddressing, Variable, RecordLiteral
 from type_inference.types.types_graph import TypesGraph
 
 bounds = (0, 0)  # todo calculate bounds
@@ -57,6 +57,12 @@ def convert_expression(types_graph: TypesGraph, expression: dict):
     result = SubscriptAddressing(record, field)
     types_graph.connect(FieldBelonging(record, result, bounds))
     return result
+
+  if "record" in expression:
+    record = expression["record"]
+    field_value = record["field_value"]
+    return RecordLiteral(
+      {field["field"]: convert_expression(types_graph, field["value"]["expression"]) for field in field_value})
 
   # todo check possibility of that case
   raise NotImplementedError(expression)
@@ -135,6 +141,7 @@ def build_graphs_for_rule_and_print(rule: str):
 
 if __name__ == '__main__':
   test_rules = [
+    'Q(x:) :- x == {a: 1, b: 10, c: {c: "Hello"}};',
     "Test(x:, y:) :- x in l, l == [0, 0.5, 1.0, 1.5, 2.0], y == 3 - x;",
     """
 StructureExtractionTest(x:, w:) :-
