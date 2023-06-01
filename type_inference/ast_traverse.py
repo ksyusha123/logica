@@ -29,7 +29,7 @@ def fill_fields(predicate_name: str, types_graph: TypesGraph, fields: dict, resu
     field_name = field["field"]
 
     if isinstance(field_name, int):
-      field_name = "col" + str(field_name)
+      field_name = f"col{field_name}"
 
     predicate_field = PredicateAddressing(predicate_name, field_name)
     types_graph.Connect(Equality(predicate_field, value, bounds))
@@ -85,7 +85,7 @@ def fill_field(types_graph: TypesGraph, field: dict):
   field_name = field["field"]
 
   if isinstance(field_name, int):
-    field_name = "col" + str(field_name)
+    field_name = f"col{field_name}"
 
   variable = Variable(field_name)
 

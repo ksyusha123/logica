@@ -32,7 +32,7 @@ class PredicateAddressing(Expression):
     return super().__eq__(other) and (self.predicate_name, self.field) == (other.predicate_name, other.field)
 
   def __str__(self):
-    return super().__str__() + f"({self.predicate_name}.{self.field})"
+    return super().__str__() + f'({self.predicate_name}.{self.field})'
 
 
 class SubscriptAddressing(Expression):
@@ -45,7 +45,7 @@ class SubscriptAddressing(Expression):
     return super().__eq__(other) and self.subscript_field == other.subscript_field
 
   def __str__(self):
-    return super().__str__() + f"{str(self.base)}.{self.subscript_field}"
+    return super().__str__() + f'{str(self.base)}.{self.subscript_field}'
 
 
 class Variable(Expression):
@@ -89,7 +89,7 @@ class ListLiteral(Literal):
     return super().__eq__(other) and self.elements == self.elements
 
   def __str__(self):
-    return super().__str__() + f"[{', '.join(map(str, self.elements))}]"
+    return super().__str__() + f'[{", ".join(map(str, self.elements))}]'
 
 
 class NullLiteral(Literal):
@@ -106,5 +106,5 @@ class RecordLiteral(Literal):
     return super().__eq__(other) and self.fields == other.fields
 
   def __str__(self):
-    fields = ", ".join(map(str, sorted(self.fields.items())))
+    fields = ', '.join(map(str, sorted(self.fields.items())))
     return super().__str__() + f'({fields})'
