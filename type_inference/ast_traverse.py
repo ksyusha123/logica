@@ -119,11 +119,11 @@ def fill_conjunct(types_graph: TypesGraph, conjunct: dict):
     raise NotImplementedError(conjunct)
 
 
-def traverse_tree(rule: dict):
+def traverse_tree(predicate_name: str, rule: dict):
   types_graph = TypesGraph()
 
   for field in rule["head"]["record"]["field_value"]:
-    fill_field(types_graph, field)
+    fill_field(types_graph, predicate_name, field)
 
   if "body" in rule:
     for conjunct in rule["body"]["conjunction"]["conjunct"]:
