@@ -15,9 +15,9 @@
 # limitations under the License.
 
 from collections import defaultdict
-from typing import Dict
+from typing import Dict, Tuple, Union
 
-from parser_py import parse
+from parser_py.parse import HeritageAwareString
 from type_inference.types.edge import Equality, EqualityOfElement, FieldBelonging, PredicateArgument
 from type_inference.types.expression import StringLiteral, NumberLiteral, BooleanLiteral, NullLiteral, ListLiteral, \
   PredicateAddressing, SubscriptAddressing, Variable, RecordLiteral, Literal, Expression
@@ -27,10 +27,6 @@ from type_inference.types.types_graph import TypesGraph
 class TypesGraphBuilder:
   _predicate_usages: defaultdict
   _if_statements_counter: int
-
-  def __init__(self):
-    self.bounds = (0, 0)  # todo calculate bounds
-    self.ResetInternalState()
 
   def ResetInternalState(self):
     self._predicate_usages = defaultdict(lambda: 0)
@@ -67,13 +63,13 @@ class TypesGraphBuilder:
     variable = PredicateAddressing(predicate_name, field_name, self._predicate_usages[predicate_name])
 
     if 'aggregation' in field['value']:
-      value = self.ConvertExpression(types_graph, field['value']['aggregation']['expression'])
-      types_graph.Connect(Equality(variable, value, self.bounds))
+      value, bounds = self.ConvertExpression(types_graph, field['value']['aggregation']['expression'])
+      types_graph.Connect(Equality(variable, value, bounds))
       return
 
     if 'expression' in field['value']:
-      value = self.ConvertExpression(types_graph, field['value']['expression'])
-      types_graph.Connect(Equality(variable, value, self.bounds))
+      value, bounds = self.ConvertExpression(types_graph, field['value']['expression'])
+      types_graph.Connect(Equality(variable, value, bounds))
       return
 
     raise NotImplementedError(field)
@@ -81,86 +77,132 @@ class TypesGraphBuilder:
   def FillConjunct(self, types_graph: TypesGraph, conjunct: dict):
     if 'unification' in conjunct:
       unification = conjunct['unification']
-      left_hand_side = self.ConvertExpression(types_graph, unification['left_hand_side'])
-      right_hand_side = self.ConvertExpression(types_graph, unification['right_hand_side'])
-      types_graph.Connect(Equality(left_hand_side, right_hand_side, self.bounds))
+      left_hand_side, (left, _) = self.ConvertExpression(types_graph, unification['left_hand_side'])
+      right_hand_side, (_, right) = self.ConvertExpression(types_graph, unification['right_hand_side'])
+      types_graph.Connect(Equality(left_hand_side, right_hand_side, (left, right)))
     elif 'inclusion' in conjunct:
       inclusion = conjunct['inclusion']
-      list_of_elements = self.ConvertExpression(types_graph, inclusion['list'])
-      element = self.ConvertExpression(types_graph, inclusion['element'])
-      types_graph.Connect(EqualityOfElement(list_of_elements, element, self.bounds))
+      list_of_elements, (left, _) = self.ConvertExpression(types_graph, inclusion['list'])
+      element, (_, right) = self.ConvertExpression(types_graph, inclusion['element'])
+      types_graph.Connect(EqualityOfElement(list_of_elements, element, (left, right)))
     elif 'predicate' in conjunct:
       value = conjunct['predicate']
       self.FillFields(value['predicate_name'], types_graph, value)
     else:
       raise NotImplementedError(conjunct)
 
-  def FillFields(self, predicate_name: str, types_graph: TypesGraph, fields: dict, result: PredicateAddressing = None):
+  def FillFields(self, predicate_name: str, types_graph: TypesGraph, fields: dict,
+                 result: PredicateAddressing = None) -> Tuple[int, int]:
+    total_min = None
+    total_max = None
+
     for field in fields['record']['field_value']:
-      value = self.ConvertExpression(types_graph, field['value']['expression'])
+      value, bounds = self.ConvertExpression(types_graph, field['value']['expression'])
+      total_min = MinIgnoringNone(total_min, bounds[0])
+      total_max = MaxIgnoringNone(total_max, bounds[1])
       field_name = field['field']
 
       if isinstance(field_name, int):
         field_name = f'col{field_name}'
 
       predicate_field = PredicateAddressing(predicate_name, field_name, self._predicate_usages[predicate_name])
-      types_graph.Connect(Equality(predicate_field, value, self.bounds))
+      types_graph.Connect(Equality(predicate_field, value, bounds))
 
       if result:
-        types_graph.Connect(PredicateArgument(result, predicate_field, self.bounds))
+        types_graph.Connect(PredicateArgument(result, predicate_field, bounds))
 
-  def ConvertExpression(self, types_graph: TypesGraph, expression: dict) -> Expression:
+    return total_min, total_max
+
+  def ConvertExpression(self, types_graph: TypesGraph, expression: dict) -> Tuple[Expression, Tuple[int, int]]:
     if 'literal' in expression:
       return self.ConvertLiteralExpression(types_graph, expression['literal'])
 
     if 'variable' in expression:
-      return Variable(expression['variable']['var_name'])
+      value = expression['variable']['var_name']
+      return Variable(value), (value.start, value.stop)
 
     if 'call' in expression:
       call = expression['call']
       predicate_name = call['predicate_name']
       result = PredicateAddressing(predicate_name, 'logica_value', self._predicate_usages[predicate_name])
-      self.FillFields(predicate_name, types_graph, call, result)
+      bounds = self.FillFields(predicate_name, types_graph, call, result)
       self._predicate_usages[predicate_name] += 1
-      return result
+      return result, self.MoveBoundsAccordingToPredicateNameType(bounds, predicate_name)
 
     if 'subscript' in expression:
       subscript = expression['subscript']
-      record = self.ConvertExpression(types_graph, subscript['record'])
+      record, (left, _) = self.ConvertExpression(types_graph, subscript['record'])
       field = subscript['subscript']['literal']['the_symbol']['symbol']
       result = SubscriptAddressing(record, field)
-      types_graph.Connect(FieldBelonging(record, result, self.bounds))
-      return result
+      bounds = (left, field.stop)
+      types_graph.Connect(FieldBelonging(record, result, bounds))
+      return result, bounds
 
     if 'record' in expression:
-      record = expression['record']
-      field_value = record['field_value']
-      return RecordLiteral(
-        {field['field']: self.ConvertExpression(types_graph, field['value']['expression']) for field in field_value})
+      fields = {}
+      total_min, total_max = None, None
+
+      for field in expression['record']['field_value']:
+        expression, (left, right) = self.ConvertExpression(types_graph, field['value']['expression'])
+        fields[field['field']] = expression
+        total_min = MinIgnoringNone(total_min, left)
+        total_max = MaxIgnoringNone(total_max, right)
+
+      return RecordLiteral(fields), (total_min - 1, total_max + 1)
 
     if 'implication' in expression:
       implication = expression['implication']
       inner_variable = Variable(f'_IfNode{self._if_statements_counter}')
       self._if_statements_counter += 1
-      otherwise = self.ConvertExpression(types_graph, implication['otherwise'])
-      types_graph.Connect(Equality(inner_variable, otherwise, self.bounds))
+      otherwise, (common_left, common_right) = self.ConvertExpression(types_graph, implication['otherwise'])
+      types_graph.Connect(Equality(inner_variable, otherwise, (common_left, common_right)))
 
       for i in implication['if_then']:
         self.ConvertExpression(types_graph, i['condition'])
-        value = self.ConvertExpression(types_graph, i['consequence'])
-        types_graph.Connect(Equality(inner_variable, value, self.bounds))
+        value, (left, right) = self.ConvertExpression(types_graph, i['consequence'])
+        types_graph.Connect(Equality(inner_variable, value, (left, right)))
+        common_left = MinIgnoringNone(common_left, left)
+        common_right = MinIgnoringNone(common_right, right)
 
-      return inner_variable
+      return inner_variable, (common_left, common_right)
 
-  def ConvertLiteralExpression(self, types_graph: TypesGraph, literal: dict) -> Literal:
+  def ConvertLiteralExpression(self, types_graph: TypesGraph, literal: dict) -> Tuple[Literal, Tuple[int, int]]:
     if 'the_string' in literal:
-      return StringLiteral()
+      string = literal['the_string']['the_string']
+      return StringLiteral(), (string.start, string.stop)
     elif 'the_number' in literal:
-      return NumberLiteral()
+      number = literal['the_number']['number']
+      return NumberLiteral(), (number.start, number.stop)
     elif 'the_bool' in literal:
-      return BooleanLiteral()
+      boolean = literal['the_bool']['bool']
+      return BooleanLiteral(), (boolean.start, boolean.stop)
     elif 'the_null' in literal:
-      return NullLiteral()
+      null = literal['the_null']['null']
+      return NullLiteral(), (null.start, null.stop)
     elif 'the_list' in literal:
-      return ListLiteral(
-        [self.ConvertExpression(types_graph, expression) for expression in literal['the_list']['element']])
+      total_min = None
+      total_max = None
+      elements = []
+
+      for element in literal['the_list']['element']:
+        expression, (left, right) = self.ConvertExpression(types_graph, element)
+        elements.append(expression)
+        total_min = MinIgnoringNone(total_min, left)
+        total_max = MinIgnoringNone(total_max, right)
+
+      return ListLiteral(elements), (total_min - 1, total_max + 1)
+
+  def MoveBoundsAccordingToPredicateNameType(self, bounds: Tuple[int, int],
+                                             predicate_name: Union[str, HeritageAwareString]) -> Tuple[int, int]:
+    if isinstance(predicate_name, str):
+      return bounds
+
+    return MinIgnoringNone(bounds[0], predicate_name.start), MaxIgnoringNone(bounds[1], predicate_name.stop)
+
+
+def MinIgnoringNone(left: Union[int, None], right: int) -> int:
+  return min(left, right) if left else right
+
+
+def MaxIgnoringNone(left: Union[int, None], right: int) -> int:
+  return max(left, right) if left else right
