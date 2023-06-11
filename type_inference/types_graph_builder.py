@@ -12,13 +12,17 @@ class TypesGraphBuilder:
   def __init__(self):
     self.bounds = (0, 0)  # todo calculate bounds
     self.predicate_usages = defaultdict(lambda: 0)
+    self._if_statements_counter = 0
 
-  def Run(self, raw_program: str) -> Dict[str, TypesGraph]:
+  def ResetInternalState(self):
     self.predicate_usages = defaultdict(lambda: 0)
-    parsed = parse.ParseFile(raw_program)
+    self._if_statements_counter = 0
+
+  def Run(self, parsed_program: dict) -> Dict[str, TypesGraph]:
+    self.ResetInternalState()
     graphs = defaultdict(lambda: TypesGraph())
 
-    for rule in parsed['rule']:
+    for rule in parsed_program['rule']:
       predicate_name = rule['head']['predicate_name']
       graphs[predicate_name] |= self.TraverseTree(predicate_name, rule)
 
@@ -117,12 +121,17 @@ class TypesGraphBuilder:
 
     if 'implication' in expression:
       implication = expression['implication']
-      # todo return and handle list
-      # return [convert_expression(types_graph, i['consequence']) for i in implication['if_then']] + \
-      #        [convert_expression(types_graph, implication['otherwise'])]
+      inner_variable = Variable(f'_IfNode{self._if_statements_counter}')
+      self._if_statements_counter += 1
+      otherwise = self.ConvertExpression(types_graph, implication['otherwise'])
+      types_graph.Connect(Equality(inner_variable, otherwise, self.bounds))
 
-      # todo handle conditions
-      return self.ConvertExpression(types_graph, implication['otherwise'])
+      for i in implication['if_then']:
+        self.ConvertExpression(types_graph, i['condition'])
+        value = self.ConvertExpression(types_graph, i['consequence'])
+        types_graph.Connect(Equality(inner_variable, value, self.bounds))
+
+      return inner_variable
 
   def ConvertLiteralExpression(self, types_graph: TypesGraph, literal: dict) -> Literal:
     if 'the_string' in literal:
