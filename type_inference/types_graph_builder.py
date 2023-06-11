@@ -9,13 +9,15 @@ from type_inference.types.types_graph import TypesGraph
 
 
 class TypesGraphBuilder:
+  _predicate_usages: defaultdict
+  _if_statements_counter: int
+
   def __init__(self):
     self.bounds = (0, 0)  # todo calculate bounds
-    self.predicate_usages = defaultdict(lambda: 0)
-    self._if_statements_counter = 0
+    self.ResetInternalState()
 
   def ResetInternalState(self):
-    self.predicate_usages = defaultdict(lambda: 0)
+    self._predicate_usages = defaultdict(lambda: 0)
     self._if_statements_counter = 0
 
   def Run(self, parsed_program: dict) -> Dict[str, TypesGraph]:
@@ -46,7 +48,7 @@ class TypesGraphBuilder:
     if isinstance(field_name, int):
       field_name = f'col{field_name}'
 
-    variable = PredicateAddressing(predicate_name, field_name)
+    variable = PredicateAddressing(predicate_name, field_name, self._predicate_usages[predicate_name])
 
     if 'aggregation' in field['value']:
       value = self.ConvertExpression(types_graph, field['value']['aggregation']['expression'])
@@ -85,7 +87,7 @@ class TypesGraphBuilder:
       if isinstance(field_name, int):
         field_name = f'col{field_name}'
 
-      predicate_field = PredicateAddressing(predicate_name, field_name)
+      predicate_field = PredicateAddressing(predicate_name, field_name, self._predicate_usages[predicate_name])
       types_graph.Connect(Equality(predicate_field, value, self.bounds))
 
       if result:
@@ -101,8 +103,9 @@ class TypesGraphBuilder:
     if 'call' in expression:
       call = expression['call']
       predicate_name = call['predicate_name']
-      result = PredicateAddressing(predicate_name, 'logica_value')
+      result = PredicateAddressing(predicate_name, 'logica_value', self._predicate_usages[predicate_name])
       self.FillFields(predicate_name, types_graph, call, result)
+      self._predicate_usages[predicate_name] += 1
       return result
 
     if 'subscript' in expression:
