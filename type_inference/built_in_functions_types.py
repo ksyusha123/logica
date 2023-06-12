@@ -73,7 +73,7 @@ def CheckInequalities(args: dict, bounds: Tuple[int, int], ):
   raise TypeInferenceException(args['left'].type, args['right'].type, bounds)
 
 
-build_in_concrete_types = {'<': CheckInequalities,
+built_in_concrete_types = {'<': CheckInequalities,
                            '>': CheckInequalities,
                            '<=': CheckInequalities,
                            '>=': CheckInequalities}

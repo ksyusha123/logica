@@ -16,7 +16,7 @@
 
 from typing import cast
 
-from type_inference.built_in_functions_types import build_in_concrete_types
+from type_inference.built_in_functions_types import built_in_concrete_types
 from type_inference.inspectors.inspector_base import Inspector
 from type_inference.intersection import Intersect, IntersectListElement
 from type_inference.types.edge import Equality, EqualityOfElement, FieldBelonging, PredicateArgument
@@ -108,9 +108,9 @@ class TypeInference:
         elif isinstance(edge, PredicateArgument):
           predicate_name = edge.logica_value.predicate_name
 
-          if predicate_name in build_in_concrete_types:
+          if predicate_name in built_in_concrete_types:
             arg_types, args = self.get_arguments(edge.logica_value, graph_name)
-            correct_types = build_in_concrete_types[predicate_name](arg_types, edge.bounds)
+            correct_types = built_in_concrete_types[predicate_name](arg_types, edge.bounds)
 
             for field, type in correct_types.items():
               args[field].type = type
