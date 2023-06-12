@@ -60,8 +60,8 @@ built_in_restrictions['>=']['right'] = atomic_type
 built_in_restrictions['>=']['logica_value'] = bool_type
 
 
-def CheckInequalities(args: dict, bounds: Tuple[int, int]):
-  args_types_set = {(args['left']), (args['right'])}
+def CheckInequalities(args: dict, bounds: Tuple[int, int], ):
+  args_types_set = {args['left'], args['right']}
 
   if args_types_set == {number_type} or args_types_set == {atomic_type, number_type}:
     return {'left': number_type, 'right': number_type}
@@ -70,7 +70,7 @@ def CheckInequalities(args: dict, bounds: Tuple[int, int]):
   elif args_types_set == {atomic_type}:
     return {'left': atomic_type, 'right': atomic_type}
 
-  raise TypeInferenceException('heh', bounds)
+  raise TypeInferenceException(args['left'].type, args['right'].type, bounds)
 
 
 build_in_concrete_types = {'<': CheckInequalities,
