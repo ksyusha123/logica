@@ -46,27 +46,30 @@ def Intersect(a: Type, b: Type, bounds: Tuple[int, int]) -> Type:
   if isinstance(a, NumberType) or isinstance(a, StringType):
     if a == b:
       return b
-    raise TypeInferenceException(f'cannot match {str(a)} and {str(b)} at ({bounds[0]};{bounds[1]})')
+    raise TypeInferenceException(f'cannot match {str(a)} and {str(b)}', bounds)
 
   if isinstance(a, ListType):
     if isinstance(b, ListType):
       new_element = Intersect(a.element, b.element, bounds)
       return ListType(new_element)
-    raise TypeInferenceException(f'cannot match {str(b)} and list at ({bounds[0]};{bounds[1]})')
+    raise TypeInferenceException(f'cannot match {str(b)} and list', bounds)
 
   a = cast(RecordType, a)
   b = cast(RecordType, b)
+  a_keys = set(a.fields.keys())
+  b_keys = set(b.fields.keys())
+
   if a.is_opened:
     if b.is_opened:
       return IntersectFriendlyRecords(a, b, True, bounds)
     else:
-      if set(a.fields.keys()) <= set(b.fields.keys()):
+      if a_keys <= b_keys:
         return IntersectFriendlyRecords(a, b, False, bounds)
-      raise TypeInferenceException(f'cannot match types of records keys at ({bounds[0]};{bounds[1]})')
+      raise TypeInferenceException(f'cannot match types of record keys: {a_keys - b_keys}', bounds)
   else:
-    if set(a.fields.keys()) == set(b.fields.keys()):
+    if a_keys == b_keys:
       return IntersectFriendlyRecords(a, b, False, bounds)
-    raise TypeInferenceException(f'cannot match types of records keys at ({bounds[0]};{bounds[1]})')
+    raise TypeInferenceException(f'cannot match types of records keys: {a_keys - (a_keys & b_keys)} and {b_keys - (a_keys & b_keys)}', bounds)
 
 
 def IntersectFriendlyRecords(a: RecordType, b: RecordType, is_opened: bool, bounds: Tuple[int, int]) -> RecordType:
