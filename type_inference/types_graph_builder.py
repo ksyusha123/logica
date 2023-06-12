@@ -88,8 +88,8 @@ class TypesGraphBuilder:
     elif 'predicate' in conjunct:
       value = conjunct['predicate']
       self.FillFields(value['predicate_name'], types_graph, value)
-    else:
-      raise NotImplementedError(conjunct)
+
+    raise NotImplementedError(conjunct)
 
   def FillFields(self, predicate_name: str, types_graph: TypesGraph, fields: dict,
                  result: PredicateAddressing = None) -> Tuple[int, int]:
@@ -116,55 +116,17 @@ class TypesGraphBuilder:
   def ConvertExpression(self, types_graph: TypesGraph, expression: dict) -> Tuple[Expression, Tuple[int, int]]:
     if 'literal' in expression:
       return self.ConvertLiteralExpression(types_graph, expression['literal'])
-
-    if 'variable' in expression:
+    elif 'variable' in expression:
       value = expression['variable']['var_name']
       return Variable(value), (value.start, value.stop)
-
-    if 'call' in expression:
-      call = expression['call']
-      predicate_name = call['predicate_name']
-      result = PredicateAddressing(predicate_name, 'logica_value', self._predicate_usages[predicate_name])
-      bounds = self.FillFields(predicate_name, types_graph, call, result)
-      self._predicate_usages[predicate_name] += 1
-      return result, self.MoveBoundsAccordingToPredicateNameType(bounds, predicate_name)
-
-    if 'subscript' in expression:
-      subscript = expression['subscript']
-      record, (left, _) = self.ConvertExpression(types_graph, subscript['record'])
-      field = subscript['subscript']['literal']['the_symbol']['symbol']
-      result = SubscriptAddressing(record, field)
-      bounds = (left, field.stop)
-      types_graph.Connect(FieldBelonging(record, result, bounds))
-      return result, bounds
-
-    if 'record' in expression:
-      fields = {}
-      total_min, total_max = None, None
-
-      for field in expression['record']['field_value']:
-        expression, (left, right) = self.ConvertExpression(types_graph, field['value']['expression'])
-        fields[field['field']] = expression
-        total_min = MinIgnoringNone(total_min, left)
-        total_max = MaxIgnoringNone(total_max, right)
-
-      return RecordLiteral(fields), (total_min - 1, total_max + 1)
-
-    if 'implication' in expression:
-      implication = expression['implication']
-      inner_variable = Variable(f'_IfNode{self._if_statements_counter}')
-      self._if_statements_counter += 1
-      otherwise, (common_left, common_right) = self.ConvertExpression(types_graph, implication['otherwise'])
-      types_graph.Connect(Equality(inner_variable, otherwise, (common_left, common_right)))
-
-      for i in implication['if_then']:
-        self.ConvertExpression(types_graph, i['condition'])
-        value, (left, right) = self.ConvertExpression(types_graph, i['consequence'])
-        types_graph.Connect(Equality(inner_variable, value, (left, right)))
-        common_left = MinIgnoringNone(common_left, left)
-        common_right = MinIgnoringNone(common_right, right)
-
-      return inner_variable, (common_left, common_right)
+    elif 'call' in expression:
+      return self.ConvertCallExpression(types_graph, expression['call'])
+    elif 'subscript' in expression:
+      return self.ConvertSubscriptExpression(types_graph, expression['subscript'])
+    elif 'record' in expression:
+      return self.ConvertRecordExpression(types_graph, expression['record']['field_value'])
+    elif 'implication' in expression:
+      return self.ConvertImplicationExpression(types_graph, expression['implication'])
 
   def ConvertLiteralExpression(self, types_graph: TypesGraph, literal: dict) -> Tuple[Literal, Tuple[int, int]]:
     if 'the_string' in literal:
@@ -192,12 +154,52 @@ class TypesGraphBuilder:
 
       return ListLiteral(elements), (total_min - 1, total_max + 1)
 
+  def ConvertCallExpression(self, types_graph: TypesGraph, call: dict):
+    predicate_name = call['predicate_name']
+    result = PredicateAddressing(predicate_name, 'logica_value', self._predicate_usages[predicate_name])
+    bounds = self.FillFields(predicate_name, types_graph, call, result)
+    self._predicate_usages[predicate_name] += 1
+    return result, self.MoveBoundsAccordingToPredicateNameType(bounds, predicate_name)
+
+  def ConvertSubscriptExpression(self, types_graph: TypesGraph, subscript: dict):
+    record, (left, _) = self.ConvertExpression(types_graph, subscript['record'])
+    field = subscript['subscript']['literal']['the_symbol']['symbol']
+    result = SubscriptAddressing(record, field)
+    bounds = (left, field.stop)
+    types_graph.Connect(FieldBelonging(record, result, bounds))
+    return result, bounds
+
+  def ConvertRecordExpression(self, types_graph: TypesGraph, field_value: dict):
+    fields = {}
+    total_min, total_max = None, None
+
+    for field in field_value:
+      expression, (left, right) = self.ConvertExpression(types_graph, field['value']['expression'])
+      fields[field['field']] = expression
+      total_min = MinIgnoringNone(total_min, left)
+      total_max = MaxIgnoringNone(total_max, right)
+
+    return RecordLiteral(fields), (total_min - 1, total_max + 1)
+
+  def ConvertImplicationExpression(self, types_graph: TypesGraph, implication: dict):
+    inner_variable = Variable(f'_IfNode{self._if_statements_counter}')
+    self._if_statements_counter += 1
+    otherwise, (common_left, common_right) = self.ConvertExpression(types_graph, implication['otherwise'])
+    types_graph.Connect(Equality(inner_variable, otherwise, (common_left, common_right)))
+
+    for i in implication['if_then']:
+      self.ConvertExpression(types_graph, i['condition'])
+      value, (left, right) = self.ConvertExpression(types_graph, i['consequence'])
+      types_graph.Connect(Equality(inner_variable, value, (left, right)))
+      common_left = MinIgnoringNone(common_left, left)
+      common_right = MinIgnoringNone(common_right, right)
+
+    return inner_variable, (common_left, common_right)
+
   def MoveBoundsAccordingToPredicateNameType(self, bounds: Tuple[int, int],
                                              predicate_name: Union[str, HeritageAwareString]) -> Tuple[int, int]:
-    if isinstance(predicate_name, str):
-      return bounds
-
-    return MinIgnoringNone(bounds[0], predicate_name.start), MaxIgnoringNone(bounds[1], predicate_name.stop)
+    return bounds if isinstance(predicate_name, str) else \
+             MinIgnoringNone(bounds[0], predicate_name.start), MaxIgnoringNone(bounds[1], predicate_name.stop)
 
 
 def MinIgnoringNone(left: Union[int, None], right: int) -> int:
