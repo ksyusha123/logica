@@ -64,22 +64,22 @@ def ValidateRuleAndGetTableName(rule: dict) -> str:
     field_value = rule['head']['record']['field_value']
 
     if len(field_value) != 1 or field_value[0]['field'] != '*':
-        raise TypeRetrievalException(f'Bad predicate to build scheme for: {rule_text}')
+        raise TypeRetrievalException(rule_text)
     
     conjuncts = rule['body']['conjunction']['conjunct']
 
     if len(conjuncts) != 1:
-        raise TypeRetrievalException(f'Bad predicate to build scheme for: {rule_text}')
+        raise TypeRetrievalException(rule_text)
     
     conjunct = conjuncts[0]
 
     if 'predicate' not in conjunct:   
-        raise TypeRetrievalException(f'Bad predicate to build scheme for: {rule_text}')
+        raise TypeRetrievalException(rule_text)
     
     field_values = conjunct['predicate']['record']['field_value']
 
     if len(field_values) != 1 or field_values[0]['field'] != '*':
-        raise TypeRetrievalException(f'Bad predicate to build scheme for: {rule_text}')
+        raise TypeRetrievalException(rule_text)
 
     return conjuncts[0]['predicate']['predicate_name'].split('.')[1]
 
@@ -109,7 +109,7 @@ class TypeRetrievalService:
 SELECT table_name, jsonb_object_agg(column_name, udt_name)
 FROM information_schema.columns
 GROUP BY table_name
-HAVING table_name in ({joined_table_names});''')
+HAVING table_name IN ({joined_table_names});''')
                 columns = {table: columns for table, columns in cursor.fetchall()}
 
             for rule in self.parsed_rules:
