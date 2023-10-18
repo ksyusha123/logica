@@ -13,8 +13,8 @@ def InitBuiltInTypes(connection_string: str):
         return
 
     with psycopg2.connect(connection_string) as conn:
-        cur = conn.cursor()
-        cur.execute(f'''
+        with conn.cursor() as cur:
+            cur.execute(f'''
 SELECT t.typname as type
 FROM pg_type t
     LEFT JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
@@ -32,7 +32,7 @@ WHERE (
             AND el.typarray = t.oid
     )
     AND n.nspname = 'pg_catalog';''')
-        built_in_types.update([x[0] for x in cur.fetchall()])
+            built_in_types.update([x[0] for x in cur.fetchall()])
 
 @cache
 def unpack_type(udt_type: str, conn) -> str:
